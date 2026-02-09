@@ -28,6 +28,10 @@ Taint tracking makes it possible to automatically detect client-side cross-site-
 
 In addition, Foxhound has been successfully used for a wide range of academic studies (e.g., the [publications](https://github.com/SAP/project-foxhound/wiki/Publications) listed in the Wiki) as well as for security testing in industrial use cases.
 
+## Notice!
+
+We have recently updated the entire git history of the main branch to align with the official Firefox GitHub repository, as described in issue #289. If you have a check-out version of Foxhound before 09.02.2026, you will need to re-clone and re-apply any local changes or update to the new git history. More details on rebasing the git history can be found in issue #289.
+
 ## Usage
 
 If an insecure data flow is discovered by the browser, it will output a warning message to the JavaScript console and trigger the `__taintreport` event.
