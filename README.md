@@ -30,7 +30,7 @@ In addition, Foxhound has been successfully used for a wide range of academic st
 
 ## Notice!
 
-We have recently updated the entire git history of the main branch to align with the official Firefox GitHub repository, as described in issue #289. If you have a check-out version of Foxhound before 09.02.2026, you will need to re-clone and re-apply any local changes or update to the new git history. More details on rebasing the git history can be found in issue #289.
+We have recently updated the entire git history of the main branch to align with the official Firefox GitHub repository, as described in [issue #289](https://github.com/SAP/project-foxhound/issues/289). If you have a check-out version of Foxhound before 09.02.2026, you will need to re-clone and re-apply any local changes or update to the new git history. More details on rebasing the git history can be found in [issue #289](https://github.com/SAP/project-foxhound/issues/289).
 
 ## Usage
 
