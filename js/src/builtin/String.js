@@ -251,7 +251,12 @@ function String_replace(searchValue, replaceValue) {
     // Fast path for regular expressions with the original
     // RegExp.prototype[@@replace] function.
     if (IsObject(searchValue) && IsOptimizableRegExpObject(searchValue)) {
-      return callFunction(RegExpReplace, searchValue, this, replaceValue);
+      var ret = callFunction(RegExpReplace, searchValue, this, replaceValue);
+      // Foxhound: ret could be a function, only taint strings.
+      if (typeof (ret) === "string") {
+        AddTaintOperationNativeFull(ret, "replace", searchValue, replaceValue);
+      }
+      return ret;
     }
 
     // Step 2.a.
