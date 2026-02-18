@@ -94,7 +94,7 @@ class AbortSignalMainThread final : public AbortSignalImpl {
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(AbortSignalMainThread)
 
-  explicit AbortSignalMainThread(bool aAborted)
+  explicit AbortSignalMainThread(SignalAborted aAborted)
       : AbortSignalImpl(aAborted, JS::UndefinedHandleValue) {
     mozilla::HoldJSObjects(this);
   }
@@ -151,7 +151,7 @@ class AbortSignalProxy final : public AbortFollower {
   // thread, to create it in already-aborted state if necessary.  It does *not*
   // reflect the instantaneous is-aborted status of the worker thread's
   // AbortSignal.
-  const bool mAborted;
+  const SignalAborted mAborted;
 
  public:
   NS_DECL_THREADSAFE_ISUPPORTS
@@ -159,7 +159,8 @@ class AbortSignalProxy final : public AbortFollower {
   AbortSignalProxy(AbortSignalImpl* aSignalImpl,
                    nsIEventTarget* aMainThreadEventTarget)
       : mMainThreadEventTarget(aMainThreadEventTarget),
-        mAborted(aSignalImpl->Aborted()) {
+        mAborted(aSignalImpl->Aborted() ? SignalAborted::Yes
+                                        : SignalAborted::No) {
     MOZ_ASSERT(!NS_IsMainThread());
     MOZ_ASSERT(mMainThreadEventTarget);
     Follow(aSignalImpl);

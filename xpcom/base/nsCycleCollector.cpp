@@ -1163,6 +1163,11 @@ class nsCycleCollector : public nsIMemoryReporter {
 
   uint32_t mWhiteNodeCount;
 
+  // Note, this counter may not be exact if some object has its
+  // reference count increased from zero or if we're doing incremental
+  // snow white releasing.
+  uint32_t mKnownSnowWhiteCount;
+
   CC_BeforeUnlinkCallback mBeforeUnlinkCB;
   CC_ForgetSkippableCallback mForgetSkippableCB;
 
@@ -1201,6 +1206,12 @@ class nsCycleCollector : public nsIMemoryReporter {
                        bool aAsyncSnowWhiteFreeing);
   bool FreeSnowWhite(bool aUntilNoSWInPurpleBuffer);
   bool FreeSnowWhiteWithBudget(SliceBudget& aBudget);
+  bool MaybeFreeSnowWhite() {
+    if ((mKnownSnowWhiteCount * 2) > SuspectedCount()) {
+      return FreeSnowWhite(false);
+    }
+    return false;
+  }
 
   // This method assumes its argument is already canonicalized.
   void RemoveObjectFromGraph(void* aPtr);
@@ -1223,6 +1234,8 @@ class nsCycleCollector : public nsIMemoryReporter {
   JSPurpleBuffer* GetJSPurpleBuffer();
 
   CycleCollectedJSRuntime* Runtime() { return mCCJSRuntime; }
+
+  void NewSnowWhiteObjectAdded() { ++mKnownSnowWhiteCount; }
 
  private:
   void CheckThreadSafety();
@@ -2801,6 +2814,7 @@ bool nsCycleCollector::FreeSnowWhite(bool aUntilNoSWInPurpleBuffer) {
 
   AutoRestore<bool> ar(mFreeingSnowWhite);
   mFreeingSnowWhite = true;
+  mKnownSnowWhiteCount = 0;
 
   bool hadSnowWhiteObjects = false;
   do {
@@ -2824,6 +2838,7 @@ bool nsCycleCollector::FreeSnowWhiteWithBudget(SliceBudget& aBudget) {
   AUTO_PROFILER_LABEL_CATEGORY_PAIR(GCCC_FreeSnowWhite);
   AutoRestore<bool> ar(mFreeingSnowWhite);
   mFreeingSnowWhite = true;
+  mKnownSnowWhiteCount = 0;
 
   SnowWhiteKiller visitor(this, &aBudget);
   mPurpleBuf.VisitEntries(visitor);
@@ -2847,6 +2862,9 @@ void nsCycleCollector::ForgetSkippable(SliceBudget& aBudget,
   if (mCCJSRuntime) {
     mCCJSRuntime->PrepareForForgetSkippable();
   }
+
+  mKnownSnowWhiteCount = 0;
+
   MOZ_ASSERT(
       !mScanInProgress,
       "Don't forget skippable or free snow-white while scan is in progress.");
@@ -3294,6 +3312,9 @@ bool nsCycleCollector::CollectWhite() {
 
   mIncrementalPhase = CleanupPhase;
 
+  // Don't delete snow white objects immediately after unlinking.
+  mKnownSnowWhiteCount = 0;
+
   return numWhiteNodes > 0 || numWhiteGCed > 0 || numWhiteJSZones > 0;
 }
 
@@ -3346,6 +3367,7 @@ nsCycleCollector::nsCycleCollector()
       mEventTarget(GetCurrentSerialEventTarget()),
 #endif
       mWhiteNodeCount(0),
+      mKnownSnowWhiteCount(0),
       mBeforeUnlinkCB(nullptr),
       mForgetSkippableCB(nullptr),
       mUnmergedNeeded(0),
@@ -4064,6 +4086,13 @@ void NS_CycleCollectorSuspect3(void* aPtr, nsCycleCollectionParticipant* aCp,
   SuspectAfterShutdown(aPtr, aCp, aRefCnt, aShouldDelete);
 }
 
+void NS_CycleCollectableHasRefCntZero() {
+  CollectorData* data = sCollectorData.get();
+  if (data && data->mCollector) {
+    data->mCollector->NewSnowWhiteObjectAdded();
+  }
+}
+
 void ClearNurseryPurpleBuffer() {
   MOZ_ASSERT(NS_IsMainThread(), "Wrong thread!");
   CollectorData* data = sCollectorData.get();
@@ -4169,6 +4198,15 @@ bool nsCycleCollector_doDeferredDeletion() {
   MOZ_ASSERT(data->mContext);
 
   return data->mCollector->FreeSnowWhite(false);
+}
+
+bool nsCycleCollector_maybeDoDeferredDeletion() {
+  CollectorData* data = sCollectorData.get();
+  if (!data || !data->mCollector) {
+    return false;
+  }
+
+  return data->mCollector->MaybeFreeSnowWhite();
 }
 
 bool nsCycleCollector_doDeferredDeletionWithBudget(SliceBudget& aBudget) {

@@ -607,6 +607,7 @@ nsresult nsStandardURL::BuildNormalizedSpec(const char* spec,
     }
     nsresult rv;
     bool allowIp = !SegmentIs(spec, mScheme, "resource") &&
+                   !SegmentIs(spec, mScheme, "moz-src") &&
                    !SegmentIs(spec, mScheme, "chrome");
     if (tempHost.First() == '[' && allowIp) {
       mCheckedIfHostA = true;

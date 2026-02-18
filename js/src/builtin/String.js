@@ -5,26 +5,6 @@
  * Modifications Copyright SAP SE. 2019-2021.  All rights reserved.
  */
 
-function StringProtoHasNoMatch() {
-  var ObjectProto = GetBuiltinPrototype("Object");
-  var StringProto = GetBuiltinPrototype("String");
-  if (!ObjectHasPrototype(StringProto, ObjectProto)) {
-    return false;
-  }
-  return !(GetBuiltinSymbol("match") in StringProto);
-}
-
-function IsStringMatchOptimizable() {
-  var RegExpProto = GetBuiltinPrototype("RegExp");
-  // If RegExpPrototypeOptimizable succeeds, `exec` and `@@match` are
-  // guaranteed to be data properties.
-  return (
-    RegExpPrototypeOptimizable(RegExpProto) &&
-    RegExpProto.exec === RegExp_prototype_Exec &&
-    RegExpProto[GetBuiltinSymbol("match")] === RegExpMatch
-  );
-}
-
 function addTaintToArray(array, name, arg) {
     if (array === null || typeof(array) !== "object" || typeof(array.length) !== "number") {
         return;
@@ -52,14 +32,23 @@ function String_match(regexp) {
   // Step 2.
   var isPatternString = typeof regexp === "string";
   if (
-    !(isPatternString && StringProtoHasNoMatch()) &&
+    !(isPatternString && CanOptimizeStringProtoSymbolLookup()) &&
     !IsNullOrUndefined(regexp)
   ) {
+    // Fast path for regular expressions with the original
+    // RegExp.prototype[@@match] function.
+    if (IsObject(regexp) && IsOptimizableRegExpObject(regexp)) {
+      return callFunction(RegExpMatch, regexp, this);
+    }
+
     // Step 2.a.
     var matcher = GetMethod(regexp, GetBuiltinSymbol("match"));
 
     // Step 2.b.
     if (matcher !== undefined) {
+      if (!IsObject(regexp)) {
+        RegExpSymbolProtocolOnPrimitiveCounter();
+      }
       var ret = callContentFunction(matcher, regexp, this);
       addTaintToArray(ret, "match", regexp);
       return ret;
@@ -69,7 +58,7 @@ function String_match(regexp) {
   // Step 3.
   var S = ToString(this);
 
-  if (isPatternString && IsStringMatchOptimizable()) {
+  if (isPatternString && IsRegExpPrototypeOptimizable()) {
     var flatResult = FlatStringMatch(S, regexp);
     if (flatResult !== undefined) {
       var ret = flatResult;
@@ -82,7 +71,7 @@ function String_match(regexp) {
   var rx = RegExpCreate(regexp);
 
   // Step 5 (optimized case).
-  if (IsStringMatchOptimizable()) {
+  if (IsRegExpPrototypeOptimizable()) {
     var ret = RegExpMatcher(rx, S, 0);
     addTaintToArray(ret, "match", regexp);
     return ret;
@@ -121,11 +110,20 @@ function String_matchAll(regexp) {
       }
     }
 
+    // Fast path for regular expressions with the original
+    // RegExp.prototype[@@matchAll] function.
+    if (IsObject(regexp) && IsOptimizableRegExpObject(regexp)) {
+      return callFunction(RegExpMatchAll, regexp, this);
+    }
+
     // Step 2.c.
     var matcher = GetMethod(regexp, GetBuiltinSymbol("matchAll"));
 
     // Step 2.d.
     if (matcher !== undefined) {
+      if (!IsObject(regexp)) {
+        RegExpSymbolProtocolOnPrimitiveCounter();
+      }
       return callContentFunction(matcher, regexp, this);
     }
   }
@@ -218,15 +216,6 @@ function String_pad_end(maxLength, fillString = " ") {
   return ret2;
 }
 
-function StringProtoHasNoReplace() {
-  var ObjectProto = GetBuiltinPrototype("Object");
-  var StringProto = GetBuiltinPrototype("String");
-  if (!ObjectHasPrototype(StringProto, ObjectProto)) {
-    return false;
-  }
-  return !(GetBuiltinSymbol("replace") in StringProto);
-}
-
 // A thin wrapper to call SubstringKernel with int32-typed arguments.
 // Caller should check the range of |from| and |length|.
 function Substring(str, from, length) {
@@ -256,14 +245,23 @@ function String_replace(searchValue, replaceValue) {
 
   // Step 2.
   if (
-    !(typeof searchValue === "string" && StringProtoHasNoReplace()) &&
+    !(typeof searchValue === "string" && CanOptimizeStringProtoSymbolLookup()) &&
     !IsNullOrUndefined(searchValue)
   ) {
+    // Fast path for regular expressions with the original
+    // RegExp.prototype[@@replace] function.
+    if (IsObject(searchValue) && IsOptimizableRegExpObject(searchValue)) {
+      return callFunction(RegExpReplace, searchValue, this, replaceValue);
+    }
+
     // Step 2.a.
     var replacer = GetMethod(searchValue, GetBuiltinSymbol("replace"));
 
     // Step 2.b.
     if (replacer !== undefined) {
+      if (!IsObject(searchValue)) {
+        RegExpSymbolProtocolOnPrimitiveCounter();
+      }
       var ret = callContentFunction(replacer, searchValue, this, replaceValue);
       // Foxhound: ret could be a function, only taint strings.
       if (typeof (ret) === "string") {
@@ -359,11 +357,20 @@ function String_replaceAll(searchValue, replaceValue) {
       }
     }
 
+    // Fast path for regular expressions with the original
+    // RegExp.prototype[@@replace] function.
+    if (IsObject(searchValue) && IsOptimizableRegExpObject(searchValue)) {
+      return callFunction(RegExpReplace, searchValue, this, replaceValue);
+    }
+
     // Step 2.c.
     var replacer = GetMethod(searchValue, GetBuiltinSymbol("replace"));
 
     // Step 2.b.
     if (replacer !== undefined) {
+      if (!IsObject(searchValue)) {
+        RegExpSymbolProtocolOnPrimitiveCounter();
+      }
       return callContentFunction(replacer, searchValue, this, replaceValue);
     }
   }
@@ -455,26 +462,6 @@ function String_replaceAll(searchValue, replaceValue) {
   return result;
 }
 
-function StringProtoHasNoSearch() {
-  var ObjectProto = GetBuiltinPrototype("Object");
-  var StringProto = GetBuiltinPrototype("String");
-  if (!ObjectHasPrototype(StringProto, ObjectProto)) {
-    return false;
-  }
-  return !(GetBuiltinSymbol("search") in StringProto);
-}
-
-function IsStringSearchOptimizable() {
-  var RegExpProto = GetBuiltinPrototype("RegExp");
-  // If RegExpPrototypeOptimizable succeeds, `exec` and `@@search` are
-  // guaranteed to be data properties.
-  return (
-    RegExpPrototypeOptimizable(RegExpProto) &&
-    RegExpProto.exec === RegExp_prototype_Exec &&
-    RegExpProto[GetBuiltinSymbol("search")] === RegExpSearch
-  );
-}
-
 // ES 2016 draft Mar 25, 2016 21.1.3.15.
 function String_search(regexp) {
   // Step 1.
@@ -485,14 +472,23 @@ function String_search(regexp) {
   // Step 2.
   var isPatternString = typeof regexp === "string";
   if (
-    !(isPatternString && StringProtoHasNoSearch()) &&
+    !(isPatternString && CanOptimizeStringProtoSymbolLookup()) &&
     !IsNullOrUndefined(regexp)
   ) {
+    // Fast path for regular expressions with the original
+    // RegExp.prototype[@@search] function.
+    if (IsObject(regexp) && IsOptimizableRegExpObject(regexp)) {
+      return callFunction(RegExpSearch, regexp, this);
+    }
+
     // Step 2.a.
     var searcher = GetMethod(regexp, GetBuiltinSymbol("search"));
 
     // Step 2.b.
     if (searcher !== undefined) {
+      if (!IsObject(regexp)) {
+        RegExpSymbolProtocolOnPrimitiveCounter();
+      }
       return callContentFunction(searcher, regexp, this);
     }
   }
@@ -500,7 +496,7 @@ function String_search(regexp) {
   // Step 3.
   var string = ToString(this);
 
-  if (isPatternString && IsStringSearchOptimizable()) {
+  if (isPatternString && IsRegExpPrototypeOptimizable()) {
     var flatResult = FlatStringSearch(string, regexp);
     if (flatResult !== -2) {
       return flatResult;
@@ -518,15 +514,6 @@ function String_search(regexp) {
   );
 }
 
-function StringProtoHasNoSplit() {
-  var ObjectProto = GetBuiltinPrototype("Object");
-  var StringProto = GetBuiltinPrototype("String");
-  if (!ObjectHasPrototype(StringProto, ObjectProto)) {
-    return false;
-  }
-  return !(GetBuiltinSymbol("split") in StringProto);
-}
-
 // ES 2016 draft Mar 25, 2016 21.1.3.17.
 function String_split(separator, limit) {
   // Step 1.
@@ -538,7 +525,7 @@ function String_split(separator, limit) {
   // are constants.  Following sequence of if's cannot be put together in
   // order that IonMonkey sees the constant if present (bug 1246141).
   if (typeof this === "string") {
-    if (StringProtoHasNoSplit()) {
+    if (CanOptimizeStringProtoSymbolLookup()) {
       if (typeof separator === "string") {
         if (limit === undefined) {
           // inlineConstantStringSplitString needs both arguments to
@@ -551,14 +538,23 @@ function String_split(separator, limit) {
 
   // Step 2.
   if (
-    !(typeof separator === "string" && StringProtoHasNoSplit()) &&
+    !(typeof separator === "string" && CanOptimizeStringProtoSymbolLookup()) &&
     !IsNullOrUndefined(separator)
   ) {
+    // Fast path for regular expressions with the original
+    // RegExp.prototype[@@split] function.
+    if (IsObject(separator) && IsOptimizableRegExpObject(separator)) {
+      return callFunction(RegExpSplit, separator, this, limit);
+    }
+
     // Step 2.a.
     var splitter = GetMethod(separator, GetBuiltinSymbol("split"));
 
     // Step 2.b.
     if (splitter !== undefined) {
+      if (!IsObject(separator)) {
+        RegExpSymbolProtocolOnPrimitiveCounter();
+      }
       return callContentFunction(splitter, separator, this, limit);
     }
   }
