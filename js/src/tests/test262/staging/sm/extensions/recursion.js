@@ -51,7 +51,10 @@ function test()
     }
     catch (e)
     {
-      $262.gc();
+      // Foxhound: changing this back to bare gc as it seems to break calling into $262:
+      gc();
+      // Original line:
+      // $262.gc();
     }
   }
   foopy();
