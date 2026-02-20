@@ -162,7 +162,7 @@ static ScrollDirections GetOverflowChange(const nsRect& aCurScrolledRect,
 class ScrollContainerFrame::ScrollEvent : public Runnable {
  public:
   NS_DECL_NSIRUNNABLE
-  explicit ScrollEvent(ScrollContainerFrame* aHelper, bool aDelayed);
+  explicit ScrollEvent(ScrollContainerFrame* aHelper);
   void Revoke() { mHelper = nullptr; }
 
  private:
@@ -172,7 +172,7 @@ class ScrollContainerFrame::ScrollEvent : public Runnable {
 class ScrollContainerFrame::ScrollEndEvent : public Runnable {
  public:
   NS_DECL_NSIRUNNABLE
-  explicit ScrollEndEvent(ScrollContainerFrame* aHelper, bool aDelayed);
+  explicit ScrollEndEvent(ScrollContainerFrame* aHelper);
   void Revoke() { mHelper = nullptr; }
 
  private:
@@ -1924,9 +1924,11 @@ class ScrollContainerFrame::AsyncSmoothMSDScroll final
   }
 
   void SetDestination(const nsPoint& aDestination,
+                      UniquePtr<ScrollSnapTargetIds> aSnapTargetIds,
                       ScrollTriggeredByScript aTriggeredByScript) {
     mXAxisModel.SetDestination(static_cast<int32_t>(aDestination.x));
     mYAxisModel.SetDestination(static_cast<int32_t>(aDestination.y));
+    mSnapTargetIds = std::move(aSnapTargetIds);
     mTriggeredByScript = aTriggeredByScript;
   }
 
@@ -2035,11 +2037,9 @@ class ScrollContainerFrame::AsyncScroll final : public nsARefreshObserver {
   typedef mozilla::TimeStamp TimeStamp;
   typedef mozilla::TimeDuration TimeDuration;
 
-  explicit AsyncScroll(UniquePtr<ScrollSnapTargetIds> aSnapTargetIds,
-                       ScrollTriggeredByScript aTriggeredByScript)
+  explicit AsyncScroll(ScrollTriggeredByScript aTriggeredByScript)
       : mOrigin(ScrollOrigin::NotSpecified),
         mCallee(nullptr),
-        mSnapTargetIds(std::move(aSnapTargetIds)),
         mTriggeredByScript(aTriggeredByScript) {}
 
  private:
@@ -2049,11 +2049,14 @@ class ScrollContainerFrame::AsyncScroll final : public nsARefreshObserver {
  public:
   void InitSmoothScroll(TimeStamp aTime, nsPoint aInitialPosition,
                         nsPoint aDestination, ScrollOrigin aOrigin,
-                        const nsRect& aRange, const nsSize& aCurrentVelocity);
-  void Init(nsPoint aInitialPosition, const nsRect& aRange) {
+                        const nsRect& aRange, const nsSize& aCurrentVelocity,
+                        UniquePtr<ScrollSnapTargetIds> aSnapTargetIds);
+  void Init(nsPoint aInitialPosition, const nsRect& aRange,
+            UniquePtr<ScrollSnapTargetIds> aSnapTargetIds) {
     mAnimationPhysics = nullptr;
     mRange = aRange;
     mStartPosition = aInitialPosition;
+    mSnapTargetIds = std::move(aSnapTargetIds);
   }
 
   bool IsSmoothScroll() { return mAnimationPhysics != nullptr; }
@@ -2157,8 +2160,8 @@ class ScrollContainerFrame::AsyncScroll final : public nsARefreshObserver {
 
 void ScrollContainerFrame::AsyncScroll::InitSmoothScroll(
     TimeStamp aTime, nsPoint aInitialPosition, nsPoint aDestination,
-    ScrollOrigin aOrigin, const nsRect& aRange,
-    const nsSize& aCurrentVelocity) {
+    ScrollOrigin aOrigin, const nsRect& aRange, const nsSize& aCurrentVelocity,
+    UniquePtr<ScrollSnapTargetIds> aSnapTargetIds) {
   switch (aOrigin) {
     case ScrollOrigin::NotSpecified:
     case ScrollOrigin::Restore:
@@ -2196,6 +2199,7 @@ void ScrollContainerFrame::AsyncScroll::InitSmoothScroll(
   mRange = aRange;
 
   mAnimationPhysics->Update(aTime, aDestination, aCurrentVelocity);
+  mSnapTargetIds = std::move(aSnapTargetIds);
 }
 
 /*
@@ -2510,8 +2514,8 @@ void ScrollContainerFrame::ScrollToWithOrigin(nsPoint aScrollPosition,
       // A previous smooth MSD scroll is still in progress, so we just need to
       // update its range and destination.
       mAsyncSmoothMSDScroll->SetRange(GetLayoutScrollRange());
-      mAsyncSmoothMSDScroll->SetDestination(mDestination,
-                                            aParams.mTriggeredByScript);
+      mAsyncSmoothMSDScroll->SetDestination(
+          mDestination, std::move(snapTargetIds), aParams.mTriggeredByScript);
     }
 
     return;
@@ -2531,16 +2535,16 @@ void ScrollContainerFrame::ScrollToWithOrigin(nsPoint aScrollPosition,
       return;
     }
 
-    mAsyncScroll =
-        new AsyncScroll(std::move(snapTargetIds), aParams.mTriggeredByScript);
+    mAsyncScroll = new AsyncScroll(aParams.mTriggeredByScript);
     mAsyncScroll->SetRefreshObserver(this);
   }
 
   if (isSmoothScroll) {
     mAsyncScroll->InitSmoothScroll(now, GetScrollPosition(), mDestination,
-                                   aParams.mOrigin, range, currentVelocity);
+                                   aParams.mOrigin, range, currentVelocity,
+                                   std::move(snapTargetIds));
   } else {
-    mAsyncScroll->Init(GetScrollPosition(), range);
+    mAsyncScroll->Init(GetScrollPosition(), range, std::move(snapTargetIds));
   }
 }
 
@@ -3667,6 +3671,24 @@ void ScrollContainerFrame::MaybeCreateTopLayerAndWrapRootItems(
   if (!mIsRoot) {
     return;
   }
+  nsIFrame* rootStyleFrame = GetFrameForStyle();
+
+  nsDisplayList rootResultList(aBuilder);
+  bool serializedList = false;
+  auto SerializeList = [&] {
+    if (!serializedList) {
+      serializedList = true;
+      aSet.SerializeWithCorrectZOrder(&rootResultList, GetContent());
+    }
+  };
+
+  if (rootStyleFrame &&
+      rootStyleFrame->HasAnyStateBits(NS_FRAME_CAPTURED_IN_VIEW_TRANSITION)) {
+    SerializeList();
+    rootResultList.AppendNewToTop<nsDisplayViewTransitionCapture>(
+        aBuilder, this, &rootResultList, aBuilder->CurrentActiveScrolledRoot(),
+        /* aIsRoot = */ true);
+  }
 
   // Create any required items for the 'top layer' and check if they'll be
   // opaque over the entire area of the viewport. If they are, then we can
@@ -3684,24 +3706,19 @@ void ScrollContainerFrame::MaybeCreateTopLayerAndWrapRootItems(
       // data implicitly for the root content document in the process, but
       // subdocuments etc need their display items to generate it, so we can't
       // cull those.
-      if (topLayerIsOpaque && PresContext()->IsRootContentDocumentInProcess()) {
+      if (topLayerIsOpaque && !serializedList &&
+          PresContext()->IsRootContentDocumentInProcess()) {
         aSet.DeleteAll(aBuilder);
       }
-      aSet.PositionedDescendants()->AppendToTop(topLayerWrapList);
+      if (serializedList) {
+        rootResultList.AppendToTop(topLayerWrapList);
+      } else {
+        aSet.PositionedDescendants()->AppendToTop(topLayerWrapList);
+      }
     }
   }
 
-  nsDisplayList rootResultList(aBuilder);
-
-  bool serializedList = false;
-  auto SerializeList = [&] {
-    if (!serializedList) {
-      serializedList = true;
-      aSet.SerializeWithCorrectZOrder(&rootResultList, GetContent());
-    }
-  };
-
-  if (nsIFrame* rootStyleFrame = GetFrameForStyle()) {
+  if (rootStyleFrame) {
     bool usingBackdropFilter =
         rootStyleFrame->StyleEffects()->HasBackdropFilters() &&
         rootStyleFrame->IsVisibleForPainting();
@@ -3715,7 +3732,6 @@ void ScrollContainerFrame::MaybeCreateTopLayerAndWrapRootItems(
 
     if (usingBackdropFilter) {
       SerializeList();
-      DisplayListClipState::AutoSaveRestore clipState(aBuilder);
       nsRect backdropRect =
           GetRectRelativeToSelf() + aBuilder->ToReferenceFrame(this);
       rootResultList.AppendNewToTop<nsDisplayBackdropFilters>(
@@ -3788,6 +3804,15 @@ void ScrollContainerFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
 
   const bool isRootContent =
       mIsRoot && PresContext()->IsRootContentDocumentCrossProcess();
+
+  const bool capturedByViewTransition = [&] {
+    if (!mIsRoot) {
+      return false;
+    }
+    auto* styleFrame = GetFrameForStyle();
+    return styleFrame &&
+           styleFrame->HasAnyStateBits(NS_FRAME_CAPTURED_IN_VIEW_TRANSITION);
+  }();
 
   // Expand the scroll port to the size including the area covered by dynamic
   // toolbar in the case where the dynamic toolbar is being used since
@@ -4127,6 +4152,8 @@ void ScrollContainerFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
 
       nsDisplayListBuilder::AutoBuildingDisplayList building(
           aBuilder, this, visibleRectForChildren, dirtyRectForChildren);
+      nsDisplayListBuilder::AutoEnterViewTransitionCapture
+          inViewTransitionCaptureSetter(aBuilder, capturedByViewTransition);
 
       BuildDisplayListForChild(aBuilder, mScrolledFrame, set);
 
@@ -4428,6 +4455,13 @@ nsRect ScrollContainerFrame::RestrictToRootDisplayPort(
 bool ScrollContainerFrame::DecideScrollableLayer(
     nsDisplayListBuilder* aBuilder, nsRect* aVisibleRect, nsRect* aDirtyRect,
     bool aSetBase, bool* aDirtyRectHasBeenOverriden) {
+  if (aBuilder->IsInViewTransitionCapture()) {
+    // If we're in a view transition, don't activate the scrollframe. We don't
+    // create APZ data for those subtrees anyways and they can't scroll.
+    mWillBuildScrollableLayer = false;
+    return false;
+  }
+
   nsIContent* content = GetContent();
   bool hasDisplayPort = DisplayPortUtils::HasDisplayPort(content);
   // For hit testing purposes with fission we want to create a
@@ -5367,29 +5401,19 @@ nsresult ScrollContainerFrame::FireScrollPortEvent() {
   return EventDispatcher::Dispatch(content, presContext, &event);
 }
 
-void ScrollContainerFrame::PostScrollEndEvent(bool aDelayed) {
+void ScrollContainerFrame::PostScrollEndEvent() {
   if (mScrollEndEvent) {
     return;
   }
 
-  // The ScrollEndEvent constructor registers itself with the refresh driver.
-  mScrollEndEvent = new ScrollEndEvent(this, aDelayed);
+  // The ScrollEndEvent constructor registers itself.
+  mScrollEndEvent = new ScrollEndEvent(this);
 }
 
 void ScrollContainerFrame::FireScrollEndEvent() {
-  RefPtr<nsIContent> content = GetContent();
-  MOZ_ASSERT(content);
-
   MOZ_ASSERT(mScrollEndEvent);
   mScrollEndEvent->Revoke();
   mScrollEndEvent = nullptr;
-
-  if (content->GetComposedDoc() &&
-      content->GetComposedDoc()->EventHandlingSuppressed()) {
-    content->GetComposedDoc()->SetHasDelayedRefreshEvent();
-    PostScrollEndEvent(/* aDelayed = */ true);
-    return;
-  }
 
   RefPtr<nsPresContext> presContext = PresContext();
   nsEventStatus status = nsEventStatus_eIgnore;
@@ -5475,7 +5499,7 @@ already_AddRefed<Element> ScrollContainerFrame::MakeScrollbar(
   if (mIsRoot) {
     e->SetProperty(nsGkAtoms::docLevelNativeAnonymousContent,
                    reinterpret_cast<void*>(true));
-    e->SetAttr(kNameSpaceID_None, nsGkAtoms::root_, u"true"_ns, false);
+    e->SetAttr(kNameSpaceID_None, nsGkAtoms::root, u"true"_ns, false);
 
     // Don't bother making style caching take [root="true"] styles into account.
     aKey = AnonymousContentKey::None;
@@ -5635,7 +5659,7 @@ nsresult ScrollContainerFrame::CreateAnonymousContent(
       mScrollCornerContent->SetProperty(
           nsGkAtoms::docLevelNativeAnonymousContent,
           reinterpret_cast<void*>(true));
-      mScrollCornerContent->SetAttr(kNameSpaceID_None, nsGkAtoms::root_,
+      mScrollCornerContent->SetAttr(kNameSpaceID_None, nsGkAtoms::root,
                                     u"true"_ns, false);
 
       // Don't bother making style caching take [root="true"] styles into
@@ -5810,10 +5834,9 @@ void ScrollContainerFrame::CurPosAttributeChangedInternal(nsIContent* aContent,
 
 /* ============= Scroll events ========== */
 
-ScrollContainerFrame::ScrollEvent::ScrollEvent(ScrollContainerFrame* aHelper,
-                                               bool aDelayed)
+ScrollContainerFrame::ScrollEvent::ScrollEvent(ScrollContainerFrame* aHelper)
     : Runnable("ScrollContainerFrame::ScrollEvent"), mHelper(aHelper) {
-  mHelper->PresContext()->RefreshDriver()->PostScrollEvent(this, aDelayed);
+  mHelper->PresShell()->PostScrollEvent(this);
 }
 
 // TODO: Convert this to MOZ_CAN_RUN_SCRIPT (bug 1415230, bug 1535398)
@@ -5826,9 +5849,9 @@ ScrollContainerFrame::ScrollEvent::Run() {
 }
 
 ScrollContainerFrame::ScrollEndEvent::ScrollEndEvent(
-    ScrollContainerFrame* aHelper, bool aDelayed)
+    ScrollContainerFrame* aHelper)
     : Runnable("ScrollContainerFrame::ScrollEndEvent"), mHelper(aHelper) {
-  mHelper->PresContext()->RefreshDriver()->PostScrollEvent(this, aDelayed);
+  mHelper->PresShell()->PostScrollEvent(this);
 }
 
 MOZ_CAN_RUN_SCRIPT_BOUNDARY NS_IMETHODIMP
@@ -5848,16 +5871,6 @@ void ScrollContainerFrame::FireScrollEvent() {
   MOZ_ASSERT(mScrollEvent);
   mScrollEvent->Revoke();
   mScrollEvent = nullptr;
-
-  // If event handling is suppressed, keep posting the scroll event to the
-  // refresh driver until it is unsuppressed. The event is marked as delayed so
-  // that the refresh driver does not continue ticking.
-  if (content->GetComposedDoc() &&
-      content->GetComposedDoc()->EventHandlingSuppressed()) {
-    content->GetComposedDoc()->SetHasDelayedRefreshEvent();
-    PostScrollEvent(/* aDelayed = */ true);
-    return;
-  }
 
   bool oldProcessing = mProcessingScrollEvent;
   AutoWeakFrame weakFrame(this);
@@ -5888,13 +5901,13 @@ void ScrollContainerFrame::FireScrollEvent() {
   }
 }
 
-void ScrollContainerFrame::PostScrollEvent(bool aDelayed) {
+void ScrollContainerFrame::PostScrollEvent() {
   if (mScrollEvent) {
     return;
   }
 
-  // The ScrollEvent constructor registers itself with the refresh driver.
-  mScrollEvent = new ScrollEvent(this, aDelayed);
+  // The ScrollEvent constructor registers itself.
+  mScrollEvent = new ScrollEvent(this);
 }
 
 // TODO: Convert this to MOZ_CAN_RUN_SCRIPT (bug 1415230, bug 1535398)
@@ -5908,18 +5921,7 @@ void ScrollContainerFrame::PostOverflowEvent() {
     return;
   }
 
-  auto overflowEventEnabled = [&]() -> bool {
-    Document* doc = PresContext()->Document();
-    if (nsContentUtils::IsChromeDoc(doc)) {
-      return true;
-    }
-    if (nsContentUtils::IsAddonDoc(doc)) {
-      return StaticPrefs::layout_overflow_underflow_content_enabled_in_addons();
-    }
-    return StaticPrefs::layout_overflow_underflow_content_enabled();
-  }();
-
-  if (!overflowEventEnabled) {
+  if (!nsContentUtils::IsChromeDoc(PresContext()->Document())) {
     return;
   }
 

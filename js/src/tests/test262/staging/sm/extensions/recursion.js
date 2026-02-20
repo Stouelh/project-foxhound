@@ -4,9 +4,9 @@
  */
 
 /*---
-includes: [sm/non262-extensions-shell.js, sm/non262-shell.js, sm/non262.js]
+includes: [sm/non262.js, sm/non262-shell.js, sm/non262-extensions-shell.js]
 flags:
-- noStrict
+  - noStrict
 description: |
   pending
 esid: pending
@@ -51,7 +51,10 @@ function test()
     }
     catch (e)
     {
+      // Foxhound: changing this back to bare gc as it seems to break calling into $262:
       gc();
+      // Original line:
+      // $262.gc();
     }
   }
   foopy();

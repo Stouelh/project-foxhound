@@ -1888,7 +1888,9 @@ static bool CanReuseScriptForClone(JS::Realm* realm, HandleFunction fun,
 #endif
 
 static inline JSFunction* NewFunctionClone(JSContext* cx, HandleFunction fun,
-                                           HandleObject proto) {
+                                           HandleObject proto,
+                                           gc::Heap heap = gc::Heap::Default,
+                                           gc::AllocSite* site = nullptr) {
   MOZ_ASSERT(cx->realm() == fun->realm());
   MOZ_ASSERT(proto);
 
@@ -1911,8 +1913,7 @@ static inline JSFunction* NewFunctionClone(JSContext* cx, HandleFunction fun,
     }
   }
 
-  JSFunction* clone =
-      JSFunction::create(cx, allocKind, gc::Heap::Default, shape);
+  JSFunction* clone = JSFunction::create(cx, allocKind, heap, shape, site);
   if (!clone) {
     return nullptr;
   }
@@ -1936,14 +1937,15 @@ static inline JSFunction* NewFunctionClone(JSContext* cx, HandleFunction fun,
 
 JSFunction* js::CloneFunctionReuseScript(JSContext* cx, HandleFunction fun,
                                          HandleObject enclosingEnv,
-                                         HandleObject proto) {
+                                         HandleObject proto, gc::Heap heap,
+                                         gc::AllocSite* site) {
   MOZ_ASSERT(cx->realm() == fun->realm());
   MOZ_ASSERT(NewFunctionEnvironmentIsWellFormed(cx, enclosingEnv));
   MOZ_ASSERT(fun->isInterpreted());
   MOZ_ASSERT(fun->hasBaseScript());
   MOZ_ASSERT(CanReuseScriptForClone(cx->realm(), fun, enclosingEnv));
 
-  JSFunction* clone = NewFunctionClone(cx, fun, proto);
+  JSFunction* clone = NewFunctionClone(cx, fun, proto, heap, site);
   if (!clone) {
     return nullptr;
   }

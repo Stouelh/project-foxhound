@@ -276,7 +276,7 @@ TaintLocation JS::TaintLocationFromContext(JSContext* cx) {
     }
 
     // Keep going down the stack if the function is self hosted
-    if (strcmp(filename, "self-hosted") != 0) {
+    if ((filename != nullptr) && (strcmp(filename, "self-hosted") != 0)) {
       break;
     }
   }

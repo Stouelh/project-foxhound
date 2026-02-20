@@ -71,7 +71,6 @@
 #include "mozilla/net/SocketProcessChild.h"
 #include "mozilla/ipc/URIUtils.h"
 #include "mozilla/glean/NetwerkProtocolHttpMetrics.h"
-#include "mozilla/Telemetry.h"
 #include "mozilla/Unused.h"
 #include "mozilla/AntiTrackingRedirectHeuristic.h"
 #include "mozilla/DynamicFpiRedirectHeuristic.h"
@@ -359,8 +358,6 @@ nsresult nsHttpHandler::Init() {
 
   // This preference is only used in parent process.
   if (!IsNeckoChild()) {
-    mActiveTabPriority =
-        Preferences::GetBool(HTTP_PREF("active_tab_priority"), true);
     if (XRE_IsParentProcess()) {
       std::bitset<3> usageOfHTTPSRRPrefs;
       usageOfHTTPSRRPrefs[0] = StaticPrefs::network_dns_upgrade_with_https_rr();
@@ -1890,14 +1887,18 @@ void nsHttpHandler::PrefsChanged(const char* pref) {
     rv = Preferences::GetCString(HTTP_PREF("http3.alt-svc-mapping-for-testing"),
                                  altSvcMappings);
     if (NS_SUCCEEDED(rv)) {
-      for (const nsACString& tokenSubstring :
-           nsCCharSeparatedTokenizer(altSvcMappings, ',').ToRange()) {
-        nsAutoCString token{tokenSubstring};
-        int32_t index = token.Find(";");
-        if (index != kNotFound) {
-          mAltSvcMappingTemptativeMap.InsertOrUpdate(
-              Substring(token, 0, index),
-              MakeUnique<nsCString>(Substring(token, index + 1)));
+      if (altSvcMappings.IsEmpty()) {
+        mAltSvcMappingTemptativeMap.Clear();
+      } else {
+        for (const nsACString& tokenSubstring :
+             nsCCharSeparatedTokenizer(altSvcMappings, ',').ToRange()) {
+          nsAutoCString token{tokenSubstring};
+          int32_t index = token.Find(";");
+          if (index != kNotFound) {
+            mAltSvcMappingTemptativeMap.InsertOrUpdate(
+                Substring(token, 0, index),
+                MakeUnique<nsCString>(Substring(token, index + 1)));
+          }
         }
       }
     }
@@ -2045,7 +2046,7 @@ nsHttpHandler::NewChannel(nsIURI* uri, nsILoadInfo* aLoadInfo,
   NS_ENSURE_ARG_POINTER(result);
 
   // Verify that we have been given a valid scheme
-  if (!uri->SchemeIs("http") && !uri->SchemeIs("https")) {
+  if (!net::SchemeIsHttpOrHttps(uri)) {
     NS_WARNING("Invalid URI scheme");
     return NS_ERROR_UNEXPECTED;
   }
@@ -2214,9 +2215,9 @@ nsHttpHandler::Observe(nsISupports* subject, const char* topic,
     // want to do telemetry twice.
     if (XRE_IsParentProcess()) {
       if (!StaticPrefs::privacy_donottrackheader_enabled()) {
-        Telemetry::Accumulate(Telemetry::DNT_USAGE, 2);
+        glean::http::dnt_usage.AccumulateSingleSample(2);
       } else {
-        Telemetry::Accumulate(Telemetry::DNT_USAGE, 1);
+        glean::http::dnt_usage.AccumulateSingleSample(1);
       }
     }
 
@@ -2869,8 +2870,7 @@ void nsHttpHandler::MaybeAddAltSvcForTesting(
     return;
   }
 
-  bool isHttps = false;
-  if (NS_FAILED(aUri->SchemeIs("https", &isHttps)) || !isHttps) {
+  if (!aUri->SchemeIs("https")) {
     // Only set for HTTPS.
     return;
   }
@@ -2893,7 +2893,7 @@ void nsHttpHandler::MaybeAddAltSvcForTesting(
   }
 }
 
-bool nsHttpHandler::EchConfigEnabled(bool aIsHttp3) const {
+bool nsHttpHandler::EchConfigEnabled(bool aIsHttp3) {
   if (sParentalControlsEnabled) {
     return false;
   }
