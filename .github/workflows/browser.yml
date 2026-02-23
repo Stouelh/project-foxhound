@@ -191,6 +191,6 @@ jobs:
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: foxhound-${{ matrix.os }}
+          name: foxhound-macos
           path: obj-tf-release/dist/foxhound-*.en-US.mac.dmg
           compression-level: 0
