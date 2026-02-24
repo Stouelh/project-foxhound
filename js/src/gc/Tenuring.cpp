@@ -672,6 +672,7 @@ void JSLinearString::maybeCloneCharsOnPromotionTyped(JSLinearString* str) {
   // Clone the chars.
   js::AutoEnterOOMUnsafeRegion oomUnsafe;
   size_t len = str->length();
+  SafeStringTaint taint = str->Taint().safeCopy();
   size_t nbytes = len * sizeof(CharT);
   CharT* data =
       str->zone()->pod_arena_malloc<CharT>(js::StringBufferArena, len);
@@ -682,6 +683,7 @@ void JSLinearString::maybeCloneCharsOnPromotionTyped(JSLinearString* str) {
 
   // Overwrite the dest string with a new linear string.
   new (str) JSLinearString(data, len, false /* hasBuffer */);
+  str->setTaint(taint);
   if (str->isTenured()) {
     str->zone()->addCellMemory(str, nbytes, js::MemoryUse::StringContents);
   } else {
