@@ -28,10 +28,10 @@ def parse_line(line):
     test_case = TestCase(parts[1], elapsed_sec=time)
     if test_status == "TEST-UNEXPECTED-FAIL":
         test_case.add_failure_info(output=failure_message)
-        failure_message = ""
-
     if test_status == "TEST-KNOWN-FAIL":
         test_case.add_skipped_info()
+
+    failure_message = ""
     return test_case
 
 def write_markdown(cmd, f, tests):
@@ -40,7 +40,7 @@ def write_markdown(cmd, f, tests):
     nfails = 0
     nskips = 0
     for case in tests.test_cases:
-        if case.is_error():
+        if case.is_failure():
             failed_tests.append(case)
             nfails += 1
         elif case.is_skipped():
@@ -62,41 +62,60 @@ Summary of JavaScript tests run with command:
 
     if len(failed_tests) > 0:
         for failed in failed_tests:
-            f.write(f"  - {failed.name}")
+            f.write(f"### {failed.name}\n")
+            for failure in failed.failures:
+                f.write("Failure message:\n\n")
+                f.write("```\n")
+                f.write(failure["output"] + "\n")
+                f.write("```\n\n")
+            f.write("\n")
     else:
         f.write("No failed tests")
 
-# Execute Jstests
-result = None
-outfile = "jstest_dump.txt"
-errfile = "jstest_stderr.txt"
-cmd = ["./mach", "jstests", "--tinderbox"]
+    # Execute Jstests
+def main():
+    result = None
+    outfile = "jstest_dump.txt"
+    errfile = "jstest_stderr.txt"
+    cmd = ["./mach", "jstests", "--tinderbox"]
 
-if run_tests:
-    print(f"Running: {' '.join(cmd)}")
-    result = subprocess.run(cmd, capture_output=True)
-    print("Done!")
+    if run_tests:
+        print(f"Running: {' '.join(cmd)}")
+        result = subprocess.run(cmd, capture_output=True)
+        print("Done!")
 
-    print(f"Writing stdout to {outfile}") 
-    data = result.stdout.decode("utf-8")
-    with open(outfile, "w+") as f:
-        f.write(data)
+        print(f"Writing stdout to {outfile}")
+        data = result.stdout.decode("utf-8")
+        with open(outfile, "w+") as f:
+            f.write(data)
 
-    print(f"Writing stdout to {errfile}") 
-    errdata = result.stderr.decode("utf-8")
-    with open(errfile, "w+") as f:
-        f.write(errdata)
-else:
-    print(f"Reading results from {outfile}") 
-    data = open(outfile).read()
+        print(f"Writing stdout to {errfile}")
+        errdata = result.stderr.decode("utf-8")
+        with open(errfile, "w+") as f:
+            f.write(errdata)
+    else:
+        print(f"Reading results from {outfile}")
+        data = open(outfile).read()
 
-print("Writing JUnit output file")
-tests = parse_report(data)
-with open("jstest_output.xml", "w") as f:
-    TestSuite.to_file(f, [tests])
+    print("Writing JUnit output file")
+    tests = parse_report(data)
+    with open("jstest_output.xml", "w") as f:
+        TestSuite.to_file(f, [tests])
 
-print("Writing Markdown Output")
-with open("jstest_output.md", "w") as f:
-    write_markdown(' '.join(cmd), f, tests)
+    print("Writing Markdown Output")
+    with open("jstest_output.md", "w") as f:
+        write_markdown(' '.join(cmd), f, tests)
 
-print("All done!")
+    print("All done!")
+
+    # Check failures for exit code
+    failures = False
+    for case in tests.test_cases:
+        if case.is_failure():
+            failures = True
+            break
+
+    return 1 if failures else 0
+
+if __name__ == '__main__':
+    sys.exit(main())
