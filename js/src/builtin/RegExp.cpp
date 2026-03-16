@@ -152,7 +152,7 @@ bool js::CreateRegExpMatchResult(JSContext* cx, HandleRegExpShared re,
       // array to avoid GC issues.
       if (str->taint().hasTaint()) {
         str->taint().extend(
-          TaintOperation("RegExp.prototype.exec", true, TaintLocationFromContext(cx),
+          TaintOperation("RegExp.prototype.exec", TaintLocationFromContext(cx),
                          { taintarg_jsstring_full(cx, srcStr), taintarg_jsstring(cx, str), taintarg(cx, i) }));
       }
       arr->setDenseInitializedLength(i + 1);

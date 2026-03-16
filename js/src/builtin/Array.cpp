@@ -1492,7 +1492,7 @@ bool js::array_join(JSContext* cx, unsigned argc, Value* vp) {
 
   if(str->isTainted()) {
     // Foxhound: add taint operation.
-    str->taint().extend(TaintOperationFromContext(cx, "Array.join", true, sepstr));
+    str->taint().extend(TaintOperationFromContext(cx, "Array.join", sepstr));
   }
 
   args.rval().setString(str);
