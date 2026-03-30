@@ -1391,7 +1391,7 @@ JSString* js::ConcatStrings(
 
   TaintOperation op("concat");
   if ((left && right) && (left->taint().hasTaint() || right->taint().hasTaint())) {
-    op = JS::TaintOperationConcat(cx, "concat", true, left, right);
+    op = JS::TaintOperationConcat(cx, "concat", left, right);
   }
   
   JSString* str = ConcatStringsQuiet<allowGC>(cx, left, right, heap);

@@ -290,52 +290,49 @@ TaintLocation JS::TaintLocationFromContext(JSContext* cx) {
 }
 
 TaintOperation JS::TaintOperationFromContext(JSContext* cx, const char* name,
-                                             bool native, JS::HandleValue args,
+                                             JS::HandleValue args,
                                              bool fullArgs) {
-  return TaintOperation(name, native, TaintLocationFromContext(cx),
+  return TaintOperation(name, TaintLocationFromContext(cx),
                         taintargs(cx, args, fullArgs));
 }
 
 TaintOperation JS::TaintOperationFromContext(JSContext* cx, const char* name,
-                                             bool native,
                                              JS::HandleString arg) {
-  return TaintOperation(name, native, TaintLocationFromContext(cx),
+  return TaintOperation(name, TaintLocationFromContext(cx),
                         taintargs(cx, arg));
 }
 
 TaintOperation JS::TaintOperationFromContext(JSContext* cx, const char* name,
-                                             bool native, JS::HandleString arg1,
+                                             JS::HandleString arg1,
                                              JS::HandleString arg2) {
-  return TaintOperation(name, native, TaintLocationFromContext(cx),
+  return TaintOperation(name, TaintLocationFromContext(cx),
                         taintargs(cx, arg1, arg2));
 }
 
 TaintOperation JS::TaintOperationFromContextJSString(JSContext* cx,
                                                      const char* name,
-                                                     bool native,
                                                      JSString* const& arg) {
-  return TaintOperation(name, native, TaintLocationFromContext(cx),
+  return TaintOperation(name, TaintLocationFromContext(cx),
                         taintargs_jsstring(cx, arg));
 }
 
 TaintOperation JS::TaintOperationFromContextJSString(JSContext* cx,
                                                      const char* name,
-                                                     bool native,
                                                      JSString* const& arg1,
                                                      JSString* const& arg2) {
-  return TaintOperation(name, native, TaintLocationFromContext(cx),
+  return TaintOperation(name, TaintLocationFromContext(cx),
                         taintargs_jsstring(cx, arg1, arg2));
 }
 
 TaintOperation JS::TaintOperationFromContextJSString(
-    JSContext* cx, const char* name, bool native,
+    JSContext* cx, const char* name,
     const JSLinearString* const& arg1, const JSLinearString* const& arg2) {
-  return TaintOperation(name, native, TaintLocationFromContext(cx),
+  return TaintOperation(name, TaintLocationFromContext(cx),
                         taintargs_jsstring(cx, arg1, arg2));
 }
 
 TaintOperation JS::TaintOperationConcat(JSContext* cx, const char* name,
-                                        bool native, JS::HandleString arg1,
+                                        JS::HandleString arg1,
                                         JS::HandleString arg2) {
   std::vector<std::u16string> args = taintargs(cx, arg1, arg2);
   std::u16string whichStringsAreTainted = u"tainted:";
@@ -346,11 +343,11 @@ TaintOperation JS::TaintOperationConcat(JSContext* cx, const char* name,
     whichStringsAreTainted.append(u"R");
   }
   args.push_back(whichStringsAreTainted);
-  return TaintOperation(name, native, TaintLocationFromContext(cx), args);
+  return TaintOperation(name, TaintLocationFromContext(cx), args);
 }
 
 TaintOperation JS::TaintOperationConcat(JSContext* cx, const char* name,
-                                        bool native, JSString* const& arg1,
+                                        JSString* const& arg1,
                                         JSString* const& arg2) {
   std::vector<std::u16string> args = taintargs_jsstring(cx, arg1, arg2);
   std::u16string whichStringsAreTainted = u"tainted:";
@@ -361,12 +358,11 @@ TaintOperation JS::TaintOperationConcat(JSContext* cx, const char* name,
     whichStringsAreTainted.append(u"R");
   }
   args.push_back(whichStringsAreTainted);
-  return TaintOperation(name, native, TaintLocationFromContext(cx), args);
+  return TaintOperation(name, TaintLocationFromContext(cx), args);
 }
 
-TaintOperation JS::TaintOperationFromContext(JSContext* cx, const char* name,
-                                             bool native) {
-  return TaintOperation(name, native, TaintLocationFromContext(cx));
+TaintOperation JS::TaintOperationFromContext(JSContext* cx, const char* name) {
+  return TaintOperation(name, TaintLocationFromContext(cx));
 }
 
 void JS::MarkTaintedFunctionArguments(JSContext* cx, JSFunction* function,
@@ -569,7 +565,6 @@ void JS::PrintJsonTaint(JSContext* cx, JSString* str, HandleValue location,
       const TaintOperation& op = node.operation();
       json.beginObject();
       json.property("operation", op.name());
-      json.boolProperty("builtin", op.isNative());
       json.boolProperty("source", op.isSource());
 
       const TaintLocation& loc = op.location();

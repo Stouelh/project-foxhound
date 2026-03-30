@@ -1682,7 +1682,7 @@ taint_addTaintOperation_native_full(JSContext* cx, unsigned argc, Value* vp)
         }
     }
 
-    str->taint().extend(TaintOperation(op_chars.get(), true, TaintLocationFromContext(cx), taint_args));
+    str->taint().extend(TaintOperation(op_chars.get(), TaintLocationFromContext(cx), taint_args));
 
     return true;
 }
@@ -1732,7 +1732,7 @@ taint_addTaintOperation_native(JSContext* cx, unsigned argc, Value* vp)
         }
     }
 
-    str->taint().extend(TaintOperation(op_chars.get(), true, TaintLocationFromContext(cx), taint_args));
+    str->taint().extend(TaintOperation(op_chars.get(), TaintLocationFromContext(cx), taint_args));
 
     return true;
 }

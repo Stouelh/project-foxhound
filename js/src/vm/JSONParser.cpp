@@ -852,7 +852,7 @@ inline bool JSONFullParseHandler<CharT>::setStringValue(
   if (ST != JSONStringType::PropertyName && taint.hasTaint()) {
     JSString* path = parser->CurrentJsonPath();
     RootedString jsonPath(cx, path);
-    op = TaintOperationFromContextJSString(cx, "JSON.parse", true, jsonPath);
+    op = TaintOperationFromContextJSString(cx, "JSON.parse", jsonPath);
   }
   
   JSString* str;
@@ -886,7 +886,7 @@ inline bool JSONFullParseHandler<CharT>::setStringValue(
   if (ST != JSONStringType::PropertyName && builder.buffer.taint()) {
     JSString* path = parser->CurrentJsonPath();
     RootedString jsonPath(cx, path);
-    op = TaintOperationFromContextJSString(cx, "JSON.parse", true, jsonPath);
+    op = TaintOperationFromContextJSString(cx, "JSON.parse", jsonPath);
   }
 
   JSString* str;

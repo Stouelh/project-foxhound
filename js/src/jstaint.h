@@ -76,39 +76,38 @@ std::string convertDigestToHexString(const TaintMd5& digest);
 TaintLocation TaintLocationFromContext(JSContext* cx);
 
 TaintOperation TaintOperationFromContext(JSContext* cx, const char* name,
-                                         bool native, JS::HandleValue args,
+                                         JS::HandleValue args,
                                          bool fullArgs = false);
 
 TaintOperation TaintOperationFromContext(JSContext* cx, const char* name,
-                                         bool native, JS::HandleString arg);
+                                         JS::HandleString arg);
 
 TaintOperation TaintOperationFromContext(JSContext* cx, const char* name,
-                                         bool native, JS::HandleString arg1,
+                                         JS::HandleString arg1,
                                          JS::HandleString arg2);
 
 TaintOperation TaintOperationFromContextJSString(JSContext* cx,
-                                                 const char* name, bool native,
+                                                 const char* name,
                                                  JSString* const& str);
 
 TaintOperation TaintOperationFromContextJSString(JSContext* cx,
-                                                 const char* name, bool native,
+                                                 const char* name,
                                                  JSString* const& str1,
                                                  JSString* const& str2);
 
 TaintOperation TaintOperationFromContextJSString(
-    JSContext* cx, const char* name, bool native,
+    JSContext* cx, const char* name,
     const JSLinearString* const& str1, const JSLinearString* const& str2);
 
 TaintOperation TaintOperationConcat(JSContext* cx, const char* name,
-                                    bool native, JS::HandleString str1,
+                                    JS::HandleString str1,
                                     JS::HandleString str2);
 
 TaintOperation TaintOperationConcat(JSContext* cx, const char* name,
-                                    bool native, JSString* const& str1,
+                                    JSString* const& str1,
                                     JSString* const& str2);
 
-TaintOperation TaintOperationFromContext(JSContext* cx, const char* name,
-                                         bool native);
+TaintOperation TaintOperationFromContext(JSContext* cx, const char* name);
 
 // Mark all tainted arguments of a function call.
 // This is mainly useful for tracing tainted arguments through the code.
